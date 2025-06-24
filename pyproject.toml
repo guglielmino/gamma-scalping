@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["engine", "market", "portfolio", "strategy"]
+
+[project]
+name = "gamma-scalper-project"
+version = "0.1.0"
+description = "A modular, event-driven gamma scalping algorithm in Python."
+authors = [
+  { name="Simon", email="your.email@example.com" },
+]
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+    "python-dotenv",
+    "alpaca-py",
+    "QuantLib",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+] 
