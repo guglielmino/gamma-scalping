@@ -1,4 +1,23 @@
+# Environment variables
 .env
-archive/
+
+# Virtual Environment
 .venv/
-gamma_scalper_project.egg-info/
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Archived code
+archive/
+
+# OS / Editor specific
+.DS_Store
+.vscode/
+.idea/
