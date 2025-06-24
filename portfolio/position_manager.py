@@ -7,6 +7,7 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, AssetClass
 from alpaca.trading.stream import TradingStream
+from collections import deque
 from config import (
     API_KEY, API_SECRET, IS_PAPER_TRADING, HEDGING_ASSET, 
     TRADE_COMMAND_TTL_SECONDS, INITIALIZATION_MODE, STRATEGY_MULTIPLIER
@@ -32,6 +33,11 @@ class PositionManager:
         self.pending_shares_change: int = 0
         self.call_option_symbol: str | None = None
         self.put_option_symbol: str | None = None
+
+        # --- P&L Tracking State ---
+        self.realized_scalp_pnl = 0.0
+        # FIFO queue for tracking hedge trades and calculating realized P&L
+        self.hedge_positions = deque()
 
         self._trade_lock = asyncio.Event()
         self._trade_lock.set()
@@ -163,13 +169,61 @@ class PositionManager:
                 logger.warning("Partial fill received. Position state may be temporarily inconsistent.")
                 return
 
-            order_qty = int(data.order.filled_qty)
-            side_multiplier = 1 if data.order.side == 'buy' else -1
+            order = data.order
+            fill_qty = int(order.filled_qty)
+            side = order.side
+            fill_price = float(order.filled_avg_price)
             
-            self.shares_owned += (order_qty * side_multiplier)
-            self.pending_shares_change -= (order_qty * side_multiplier)
+            # --- FIFO P&L Calculation ---
+            pnl_this_trade = 0.0
+            qty_to_match = fill_qty
+
+            if side == OrderSide.BUY:
+                # This BUY is closing a previous SHORT position
+                while qty_to_match > 0 and self.hedge_positions and self.hedge_positions[0]['side'] == OrderSide.SELL:
+                    oldest_short = self.hedge_positions.popleft()
+                    match_qty = min(qty_to_match, oldest_short['qty'])
+                    
+                    pnl_this_trade += (oldest_short['price'] - fill_price) * match_qty
+                    
+                    qty_to_match -= match_qty
+                    oldest_short['qty'] -= match_qty
+                    
+                    if oldest_short['qty'] > 0:
+                        self.hedge_positions.appendleft(oldest_short)
+
+            elif side == OrderSide.SELL:
+                # This SELL is closing a previous LONG position
+                while qty_to_match > 0 and self.hedge_positions and self.hedge_positions[0]['side'] == OrderSide.BUY:
+                    oldest_long = self.hedge_positions.popleft()
+                    match_qty = min(qty_to_match, oldest_long['qty'])
+
+                    pnl_this_trade += (fill_price - oldest_long['price']) * match_qty
+
+                    qty_to_match -= match_qty
+                    oldest_long['qty'] -= match_qty
+
+                    if oldest_long['qty'] > 0:
+                        self.hedge_positions.appendleft(oldest_long)
             
-            logger.warning(f"Order {data.event}. Position is now {self.shares_owned} shares.")
+            # Add any remaining quantity as a new open position
+            if qty_to_match > 0:
+                self.hedge_positions.append({'price': fill_price, 'qty': qty_to_match, 'side': side})
+            
+            if pnl_this_trade != 0.0:
+                self.realized_scalp_pnl += pnl_this_trade
+                logger.warning(
+                    f"Realized P&L from this scalp: ${pnl_this_trade:+.2f}. "
+                    f"Cumulative Scalp P&L: ${self.realized_scalp_pnl:+.2f}"
+                )
+            
+            # --- State Reconciliation ---
+            side_multiplier = 1 if side == 'buy' else -1
+            
+            self.shares_owned += (fill_qty * side_multiplier)
+            self.pending_shares_change -= (fill_qty * side_multiplier)
+            
+            logger.info(f"Order {data.event}. Position is now {self.shares_owned} shares.")
 
             if self._pending_second_leg:
                 logger.info("Executing second leg of two-part trade.")

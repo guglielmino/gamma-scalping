@@ -1,0 +1,4 @@
+.env
+archive/
+.venv/
+gamma_scalper_project.egg-info/

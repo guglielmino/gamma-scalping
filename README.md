@@ -69,21 +69,33 @@ flowchart TD
 ### 1. Prerequisites
 * Python 3.10+
 * An Alpaca paper or live trading account.
+* [uv](https://github.com/astral-sh/uv) (for environment and package management)
 
 ### 2. Installation
 
-```bash
-# Clone the repository
-git clone https://github.com/alpacahq/gamma-scalper.git
-cd gamma-scalper
+This project uses `uv` for fast environment and package management.
 
-# Create and activate a virtual environment (recommended)
-python -m venv venv
-source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
+1.  **Install `uv`**
 
-# Install the required packages
-pip install -r requirements.txt
-```
+    If you don't have `uv` installed, you can often install it with `pip`:
+    ```bash
+    pip install uv
+    ```
+
+2.  **Clone the repository and set up the environment**
+
+    ```bash
+    # Clone the repository
+    git clone https://github.com/alpacahq/gamma-scalper.git
+    cd gamma-scalper
+
+    # Create and activate a virtual environment with uv
+    uv venv
+    source .venv/bin/activate # On Windows, use `.venv\Scripts\activate`
+
+    # Install the project dependencies in editable mode
+    uv pip install -e .
+    ```
 
 ### 3. Configuration
 
