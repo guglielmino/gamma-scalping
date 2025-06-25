@@ -9,6 +9,8 @@ from config import (
     PRICE_CHANGE_THRESHOLD, HEARTBEAT_TRIGGER_SECONDS
 )
 from utils.parsing import parse_option_symbol
+from .us_treasury_yield_curve import get_risk_free_rate
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -35,10 +37,12 @@ class MarketDataManager:
         self._last_checked_stock_price: float = 0.0
         self._spread_ema: float = None
 
-        # Temporarily hardcode the risk free rate and dividend yield
-        self.risk_free_rate = 0.05
+        # Extract risk free rate from the US Treasury Yield Curve
+        # temporarily hardcode the dividend yield to 0.0
+        days_to_expiry = (self.call_option_expiry - datetime.now().date()).days
+        self.risk_free_rate = get_risk_free_rate(days_to_expiry)
         self.dividend_yield = 0.0
-        
+    
         # Alpaca stream clients
         self.option_stream = OptionDataStream(API_KEY, API_SECRET)
         self.stock_stream = StockDataStream(API_KEY, API_SECRET)

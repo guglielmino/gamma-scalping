@@ -24,3 +24,6 @@ archive/
 
 # Trade log files
 trades/
+
+# Jupyter notebooks
+*.ipynb

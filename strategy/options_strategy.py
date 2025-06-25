@@ -15,6 +15,7 @@ from config import (
 from portfolio.position_manager import PositionManager
 from datetime import datetime, timedelta
 from engine.delta_engine import calculate_single_option_greeks, calculate_implied_volatility
+from market.us_treasury_yield_curve import get_risk_free_rate
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +114,7 @@ async def open_initial_straddle(position_manager: PositionManager):
             contracts_by_expiry[expiry][strike]['put'] = contract
 
     # Step 4: For each expiration, determine a dynamic strike range based on implied volatility.
+    approximate_risk_free_rate = get_risk_free_rate((MIN_EXPIRATION_DAYS + MAX_EXPIRATION_DAYS)/2)
     all_candidate_straddles = []
     for expiry, strikes in contracts_by_expiry.items():
         # Find strikes that have both a call and a put.
@@ -138,9 +140,9 @@ async def open_initial_straddle(position_manager: PositionManager):
 
             # Use the existing function to get a baseline IV from the ATM call
 
-            #TODO: update the risk free rate and dividend yield
+            #TODO: update the dividend yield
             baseline_iv = calculate_implied_volatility(
-                atm_call_price, underlying_price, atm_strike, expiry_days, 'call', 0.05, 0
+                atm_call_price, underlying_price, atm_strike, expiry_days, 'call', approximate_risk_free_rate, 0
             )
             
             if not (baseline_iv > 0): # Check for NaN or non-positive IV
@@ -193,10 +195,10 @@ async def open_initial_straddle(position_manager: PositionManager):
             # Calculate the greeks (theta and gamma) for both options.
             # We use a placeholder risk-free rate of 5% and no dividend yield.
             call_greeks = calculate_single_option_greeks(
-                call_price, underlying_price, straddle['strike'], expiry_days, 'call', 0.05, 0, ['theta', 'gamma']
+                call_price, underlying_price, straddle['strike'], expiry_days, 'call', approximate_risk_free_rate, 0, ['theta', 'gamma']
             )
             put_greeks = calculate_single_option_greeks(
-                put_price, underlying_price, straddle['strike'], expiry_days, 'put', 0.05, 0, ['theta', 'gamma']
+                put_price, underlying_price, straddle['strike'], expiry_days, 'put', approximate_risk_free_rate, 0, ['theta', 'gamma']
             )
             
             call_theta = call_greeks['theta']

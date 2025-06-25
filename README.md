@@ -131,3 +131,10 @@ The bot will start, initialize its position (or find a new one if in `init` mode
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details. 
+
+
+NEXT STEPS
+    - find the opportunities (need to predict vol and find mispricings)
+    - dynamic delta threshold
+    - exits (when has the oppportunity passed, stop loss, letting it run)
+    - improved pricing models (discrete dividends, finer grained yield curves)

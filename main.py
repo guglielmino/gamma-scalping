@@ -3,7 +3,8 @@
 #TODO: scalp trade logging [done]
 #TODO: paginate the options search [done]
 #TODO: improve the straddle scoring / selection logic [done]
-#TODO: update the risk free rate and dividend yield []
+#TODO: update the risk free rate [done]
+#TODO: update the dividend yield []
 
 import asyncio
 import logging
