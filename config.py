@@ -35,6 +35,9 @@ MIN_OPEN_INTEREST = 100
 # Weight for the theta in the score calculation.
 # A rough proxy for the number of days the position will be held.
 THETA_WEIGHT = 5
+# Default risk free rate.
+# This is used if the yield curve cannot be fetched from treasury.gov
+DEFAULT_RISK_FREE_RATE = 0.045
 
 
 # --- Market State Trigger Parameters ---

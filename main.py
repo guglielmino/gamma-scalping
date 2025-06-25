@@ -4,7 +4,7 @@
 #TODO: paginate the options search [done]
 #TODO: improve the straddle scoring / selection logic [done]
 #TODO: update the risk free rate [done]
-#TODO: update the dividend yield []
+#TODO: update the dividend yield [done]
 
 import asyncio
 import logging
