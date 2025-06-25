@@ -10,7 +10,7 @@ from alpaca.data import StockHistoricalDataClient
 from config import (
     API_KEY, API_SECRET, HEDGING_ASSET,
     MIN_EXPIRATION_DAYS, MAX_EXPIRATION_DAYS, MIN_OPEN_INTEREST,
-    STRATEGY_MULTIPLIER, THETA_WEIGHT
+    STRATEGY_MULTIPLIER, THETA_WEIGHT, OPTIONS_CONTRACT_MULTIPLIER
 )
 from portfolio.position_manager import PositionManager
 from datetime import datetime, timedelta
@@ -115,14 +115,17 @@ async def open_initial_straddle(position_manager: PositionManager):
     # Step 4: For each expiration, determine a dynamic strike range based on implied volatility.
     all_candidate_straddles = []
     for expiry, strikes in contracts_by_expiry.items():
-        # Find the at-the-money strike to use as a baseline for IV
-        atm_strike = min(strikes.keys(), key=lambda k: abs(k - underlying_price))
+        # Find strikes that have both a call and a put.
+        valid_straddle_strikes = [k for k, v in strikes.items() if 'call' in v and 'put' in v]
         
-        # Ensure the ATM strike has a valid straddle pair before proceeding
-        if not ('call' in strikes[atm_strike] and 'put' in strikes[atm_strike]):
-            logger.warning(f"No valid ATM straddle found for {expiry}. Skipping this expiration.")
+        # If no valid straddles are found for an expiry, skip it.
+        if not valid_straddle_strikes:
+            logger.warning(f"No valid straddles found for {expiry}. Skipping this expiration.")
             continue
             
+        # From the valid straddles, find the at-the-money strike to use as a baseline for IV.
+        atm_strike = min(valid_straddle_strikes, key=lambda k: abs(k - underlying_price))
+        
         try:
             # --- Calculate Dynamic Strike Range ---
             atm_call_symbol = strikes[atm_strike]['call'].symbol
@@ -213,7 +216,7 @@ async def open_initial_straddle(position_manager: PositionManager):
             total_spread = call_spread + put_spread
             
             if total_gamma > 0:
-                straddle['score'] = (abs(total_theta) * THETA_WEIGHT + total_spread ) / total_gamma
+                straddle['score'] = (abs(total_theta) * THETA_WEIGHT + total_spread * STRATEGY_MULTIPLIER * OPTIONS_CONTRACT_MULTIPLIER ) / total_gamma
             else:
                 # Avoid division by zero if gamma is not positive.
                 straddle['score'] = float('inf')

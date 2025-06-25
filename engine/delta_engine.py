@@ -165,7 +165,7 @@ class DeltaEngine:
                 stock = self.market_manager.stock_price
                 call = self.market_manager.call_option_price
                 put = self.market_manager.put_option_price
-                print(stock, call, put)
+                # print(stock, call, put)
 
                 # Offload the blocking, CPU-intensive work to a separate thread.
                 put_greeks = await asyncio.to_thread(
