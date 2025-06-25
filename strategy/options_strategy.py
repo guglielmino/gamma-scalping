@@ -1,4 +1,5 @@
 import logging
+import math
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest, GetOptionContractsRequest
 from alpaca.data.requests import OptionSnapshotRequest
@@ -9,13 +10,33 @@ from alpaca.data import StockHistoricalDataClient
 from config import (
     API_KEY, API_SECRET, HEDGING_ASSET,
     MIN_EXPIRATION_DAYS, MAX_EXPIRATION_DAYS, MIN_OPEN_INTEREST,
-    STRATEGY_MULTIPLIER
+    STRATEGY_MULTIPLIER, THETA_WEIGHT
 )
 from portfolio.position_manager import PositionManager
 from datetime import datetime, timedelta
-from engine.delta_engine import calculate_single_option_greeks
+from engine.delta_engine import calculate_single_option_greeks, calculate_implied_volatility
 
 logger = logging.getLogger(__name__)
+
+async def _fetch_all_contracts(trading_client: TradingClient, request_params: GetOptionContractsRequest):
+    """
+    Fetches all available option contracts by handling API pagination.
+    """
+    all_contracts = []
+    page_token = None
+    
+    while True:
+        request_params.page_token = page_token
+        response = trading_client.get_option_contracts(request_params)
+        
+        if response.option_contracts:
+            all_contracts.extend(response.option_contracts)
+        
+        page_token = response.next_page_token
+        if not page_token:
+            break
+            
+    return all_contracts
 
 # MUST MAKE SURE OPTIONS NAMES ARE SAVED IN THE POSITION MANAGER
 async def open_initial_straddle(position_manager: PositionManager):
@@ -66,9 +87,9 @@ async def open_initial_straddle(position_manager: PositionManager):
         root_symbol=HEDGING_ASSET,
         type=ContractType.CALL
     )
-    call_contracts = trading_client.get_option_contracts(request_params).option_contracts
+    call_contracts = await _fetch_all_contracts(trading_client, request_params)
     request_params.type = ContractType.PUT
-    put_contracts = trading_client.get_option_contracts(request_params).option_contracts
+    put_contracts = await _fetch_all_contracts(trading_client, request_params)
 
     # Filter out contracts with low open interest to avoid issues with liquidity.
     call_contracts = [contract for contract in call_contracts if contract.open_interest is not None and int(contract.open_interest) > MIN_OPEN_INTEREST]
@@ -91,39 +112,66 @@ async def open_initial_straddle(position_manager: PositionManager):
         else:
             contracts_by_expiry[expiry][strike]['put'] = contract
 
-    # Step 4: Identify the best candidate straddles from the available pairs.
-    # For each expiration, we find the strike price that is closest to the underlying price.
-    best_straddles = []
+    # Step 4: For each expiration, determine a dynamic strike range based on implied volatility.
+    all_candidate_straddles = []
     for expiry, strikes in contracts_by_expiry.items():
-        best_strike = None
-        min_diff = float('inf')
-
-        for strike, contract_pair in strikes.items():
-            if 'call' in contract_pair and 'put' in contract_pair:
-                diff = abs(strike - underlying_price)
-                if diff < min_diff:
-                    min_diff = diff
-                    best_strike = strike
+        # Find the at-the-money strike to use as a baseline for IV
+        atm_strike = min(strikes.keys(), key=lambda k: abs(k - underlying_price))
         
-        # We only consider straddles where the strike is within 5% of the underlying price.
-        # This helps to ensure we are not trading extremely OTM options.
-        if best_strike is not None and min_diff < 0.05 * underlying_price:
-            best_straddles.append({
-                'expiration': expiry,
-                'strike': best_strike,
-                'call': contracts_by_expiry[expiry][best_strike]['call'],
-                'put': contracts_by_expiry[expiry][best_strike]['put']
-            })
-    
-    if not best_straddles:
-        logger.warning("Could not find any suitable straddle pairs within the given criteria.")
+        # Ensure the ATM strike has a valid straddle pair before proceeding
+        if not ('call' in strikes[atm_strike] and 'put' in strikes[atm_strike]):
+            logger.warning(f"No valid ATM straddle found for {expiry}. Skipping this expiration.")
+            continue
+            
+        try:
+            # --- Calculate Dynamic Strike Range ---
+            atm_call_symbol = strikes[atm_strike]['call'].symbol
+            snapshot_request = OptionSnapshotRequest(symbol_or_symbols=[atm_call_symbol])
+            snapshot = option_client.get_option_snapshot(snapshot_request)[atm_call_symbol]
+            atm_call_price = (snapshot.latest_quote.ask_price + snapshot.latest_quote.bid_price) / 2
+            
+            expiry_days = (expiry - datetime.now().date()).days
+            time_to_expiry_years = expiry_days / 365.25
+
+            # Use the existing function to get a baseline IV from the ATM call
+
+            #TODO: update the risk free rate and dividend yield
+            baseline_iv = calculate_implied_volatility(
+                atm_call_price, underlying_price, atm_strike, expiry_days, 'call', 0.05, 0
+            )
+            
+            if not (baseline_iv > 0): # Check for NaN or non-positive IV
+                logger.warning(f"Could not calculate a valid baseline IV for ATM strike {atm_strike} on {expiry}. Skipping.")
+                continue
+
+            # Define the strike search range using a 1-standard-deviation expected move
+            expected_move = underlying_price * baseline_iv * math.sqrt(time_to_expiry_years)
+            min_strike = underlying_price - expected_move
+            max_strike = underlying_price + expected_move
+            logger.info(f"For expiry {expiry}, baseline IV is {baseline_iv:.2%}. Expected move: ${expected_move:.2f}. Strike Range: {min_strike:.2f}-{max_strike:.2f}")
+
+            # Gather all valid straddles within this dynamic range
+            for strike, contract_pair in strikes.items():
+                if 'call' in contract_pair and 'put' in contract_pair and min_strike <= strike <= max_strike:
+                    all_candidate_straddles.append({
+                        'expiration': expiry,
+                        'strike': strike,
+                        'call': contract_pair['call'],
+                        'put': contract_pair['put']
+                    })
+
+        except Exception as e:
+            logger.error(f"Error processing expiration {expiry}: {e}")
+            continue
+
+    if not all_candidate_straddles:
+        logger.warning("Could not find any suitable straddle pairs within the dynamic criteria.")
         return
     
-    logger.info(f"Identified {len(best_straddles)} potential straddle candidates. Now scoring them...")
-    # Step 5: Score each candidate straddle to find the most favorable one.
-    # The score is calculated as abs(Total Theta) / Total Gamma. A lower score is better.
-    # This ratio helps us find a straddle that has low time decay (theta) for the amount of convexity (gamma) it provides.
-    for straddle in best_straddles:
+    logger.info(f"Identified {len(all_candidate_straddles)} potential straddle candidates across all expiries. Now scoring them...")
+    
+    # Step 5: Score all candidate straddles to find the most favorable one.
+    for straddle in all_candidate_straddles:
         try:
             call_symbol = straddle['call'].symbol
             put_symbol = straddle['put'].symbol
@@ -132,10 +180,10 @@ async def open_initial_straddle(position_manager: PositionManager):
             snapshot_request = OptionSnapshotRequest(symbol_or_symbols=[call_symbol, put_symbol])
             snapshots = option_client.get_option_snapshot(snapshot_request)
 
-            # print(snapshots)
-            
             call_price = (snapshots[call_symbol].latest_quote.ask_price + snapshots[call_symbol].latest_quote.bid_price) / 2
             put_price = (snapshots[put_symbol].latest_quote.ask_price + snapshots[put_symbol].latest_quote.bid_price) / 2
+            call_spread = snapshots[call_symbol].latest_quote.ask_price - snapshots[call_symbol].latest_quote.bid_price
+            put_spread = snapshots[put_symbol].latest_quote.ask_price - snapshots[put_symbol].latest_quote.bid_price
             
             expiry_days = (straddle['expiration'] - datetime.now().date()).days
             
@@ -162,9 +210,10 @@ async def open_initial_straddle(position_manager: PositionManager):
             # Calculate the final score for the straddle.
             total_theta = call_theta + put_theta
             total_gamma = call_gamma + put_gamma
+            total_spread = call_spread + put_spread
             
             if total_gamma > 0:
-                straddle['score'] = abs(total_theta) / total_gamma
+                straddle['score'] = (abs(total_theta) * THETA_WEIGHT + total_spread ) / total_gamma
             else:
                 # Avoid division by zero if gamma is not positive.
                 straddle['score'] = float('inf')
@@ -173,15 +222,15 @@ async def open_initial_straddle(position_manager: PositionManager):
             logger.error(f"Failed to score straddle for expiry {straddle['expiration']}: {e}")
             straddle['score'] = float('inf')
 
-    # Step 6: Select the straddle with the lowest score.
-    best_straddles.sort(key=lambda x: x.get('score', float('inf')))
+    # Step 6: Select the straddle with the lowest score from all candidates.
+    all_candidate_straddles.sort(key=lambda x: x.get('score', float('inf')))
 
-    if not best_straddles or best_straddles[0].get('score') == float('inf'):
+    if not all_candidate_straddles or all_candidate_straddles[0].get('score') == float('inf'):
         logger.warning("No suitable straddles could be scored successfully.")
         return
     
     # The best straddle is the one with the lowest score at the top of the sorted list.
-    chosen_straddle = best_straddles[0]
+    chosen_straddle = all_candidate_straddles[0]
     call_symbol = chosen_straddle['call'].symbol
     put_symbol = chosen_straddle['put'].symbol
     

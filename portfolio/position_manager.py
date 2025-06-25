@@ -3,6 +3,9 @@
 import asyncio
 import time
 import logging
+import os
+import json
+from datetime import datetime
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, AssetClass
@@ -10,7 +13,7 @@ from alpaca.trading.stream import TradingStream
 from collections import deque
 from config import (
     API_KEY, API_SECRET, IS_PAPER_TRADING, HEDGING_ASSET, 
-    TRADE_COMMAND_TTL_SECONDS, INITIALIZATION_MODE, STRATEGY_MULTIPLIER
+    TRADE_COMMAND_TTL_SECONDS, INITIALIZATION_MODE, STRATEGY_MULTIPLIER, TRADE_LOG_DIR
 )
 from utils.parsing import parse_option_symbol
 
@@ -38,6 +41,13 @@ class PositionManager:
         self.realized_scalp_pnl = 0.0
         # FIFO queue for tracking hedge trades and calculating realized P&L
         self.hedge_positions = deque()
+        
+        # --- Trade Logging ---
+        log_dir = TRADE_LOG_DIR
+        os.makedirs(log_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.trade_log_file = os.path.join(log_dir, f"trades_{timestamp}.jsonl")
+        logger.info(f"Logging trades to {self.trade_log_file}")
 
         self._trade_lock = asyncio.Event()
         self._trade_lock.set()
@@ -163,6 +173,8 @@ class PositionManager:
     async def _handle_trade_fill(self, data):
         """The callback handler for trade update events."""
         logger.info(f"Trade update received: {data.event}")
+        if data.order.symbol != HEDGING_ASSET:
+            return
         
         if data.event in ['fill', 'partial_fill', 'canceled', 'rejected']:
             if data.event == 'partial_fill':
@@ -216,9 +228,21 @@ class PositionManager:
                     f"Realized P&L from this scalp: ${pnl_this_trade:+.2f}. "
                     f"Cumulative Scalp P&L: ${self.realized_scalp_pnl:+.2f}"
                 )
+
+            # --- Log Trade to File ---
+            log_entry = {
+                "timestamp": datetime.now().isoformat(),
+                "symbol": order.symbol,
+                "side": side.value,
+                "quantity": fill_qty,
+                "fill_price": fill_price,
+                "pnl": pnl_this_trade
+            }
+            with open(self.trade_log_file, 'a') as f:
+                f.write(json.dumps(log_entry) + '\n')
             
             # --- State Reconciliation ---
-            side_multiplier = 1 if side == 'buy' else -1
+            side_multiplier = 1 if side == OrderSide.BUY else -1
             
             self.shares_owned += (fill_qty * side_multiplier)
             self.pending_shares_change -= (fill_qty * side_multiplier)

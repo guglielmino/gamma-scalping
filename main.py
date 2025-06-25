@@ -1,6 +1,9 @@
 # delta_hedger/main.py
-#TODO: pnl tracking
-#TODO: add risk management (at the very least, a stop if the price trends too far from the strike)
+#TODO: pnl tracking (test) [done]   
+#TODO: scalp trade logging [done]
+#TODO: paginate the options search [done]
+#TODO: improve the straddle scoring / selection logic [done]
+#TODO: update the risk free rate and dividend yield []
 
 import asyncio
 import logging

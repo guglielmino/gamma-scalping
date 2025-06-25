@@ -80,12 +80,13 @@ class MarketDataManager:
         spread = quote.ask_price - quote.bid_price
         mid_price = (quote.bid_price + quote.ask_price) / 2
         # Filter out bad quotes
+        # print(f"spread: {spread}, ema: {self._spread_ema}")
         if mid_price > 0 and self._spread_ema is not None and spread <= 1.5 * self._spread_ema:
             self.stock_price = mid_price
             await self._check_and_trigger()
-        if self._spread_ema is None:
+        if self._spread_ema is None and spread < 0.5:
             self._spread_ema = spread
-        else:
+        elif spread < 0.5:
             self._spread_ema = 0.9 * self._spread_ema + 0.1 * spread
 
     async def _handle_option_quote(self, quote):

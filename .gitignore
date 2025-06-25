@@ -21,3 +21,6 @@ archive/
 .DS_Store
 .vscode/
 .idea/
+
+# Trade log files
+trades/
