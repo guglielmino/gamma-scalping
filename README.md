@@ -10,11 +10,11 @@ Our goal is to make complex concepts accessible. If you're new to options, this 
 
 ## The Core Concept: A Race Against Time
 
-So, what is Gamma Scalping? Imagine you want to profit from a stock's choppiness without betting on its direction. That's what this strategy aims to do. At its heart, it's a race between two competing forces:
+So, what is Gamma Scalping? Imagine you want to profit from a stock's choppiness without betting on its direction. That's what this strategy aims to do. This strategy is long volatility, meaning it profits if the stock is *more* volatile than the market expects.  At its heart, it's a race between two competing forces:
 
-1.  **Volatility (Your Profit Engine - Gamma):** The strategy is long volatility. This means it profits if the stock is *more* volatile than the market expects. We achieve this by buying a "straddle" (a call and a put option at the same strike price), which gives us a position that benefits from price movement in *either* direction. This potential to profit from movement is driven by positive **Gamma**, which describes how our position becomes more directionally sensitive as the stock moves.
+1.  **Volatility (Your Profit Engine - Gamma):** We begin by buying a "straddle" (a call and a put at the same strike) to get positive **Gamma**, which makes our position benefit from movement in either direction. We then convert volatility into profit by "scalping": repeatedly buying and selling the underlying stock as it fluctuates. 
 
-2.  **Time Decay (Your Cost - Theta):** The options we buy are like an insurance policy against directional moves, and that policy has a daily cost. Every day that passes, the value of our options decreases slightly. This steady loss in value is called **Theta**.
+2.  **Time Decay (Your Cost - Theta):** The options we buy are like an insurance policy allowing us to scalp the underlying without exposure to directional risk. This insurance incurs a daily cost. Every day that passes, the value of our options decreases slightly. This steady loss in value is called **Theta**.
 
 **The goal is to make more money from scalping the small price fluctuations (harvesting volatility) than we lose to time decay.** We are making a bet that the *realized volatility* of the asset will be greater than the *implied volatility* priced into the options.
 
