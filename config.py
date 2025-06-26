@@ -12,18 +12,18 @@ API_SECRET = os.getenv("TRADING_API_SECRET")
 
 # --- Strategy & Ticker Configuration ---
 # The underlying stock we are trading and hedging
-HEDGING_ASSET = "PLTR"
+HEDGING_ASSET = "NVDA"
 # The directory to log trades to.
 TRADE_LOG_DIR = "trades"
 # --- Initialization Mode ---
 # 'init' to start fresh (clears all positions), 'resume' to continue with existing positions.
-INITIALIZATION_MODE = "init"
+INITIALIZATION_MODE = "resume"
 
 
 # --- Hedging Strategy Parameters ---
 # The 'dead band' for our net delta. A trade is triggered if abs(net_delta) > this value.
 # This prevents excessive trading due to small delta fluctuations and reduces transaction costs.
-HEDGING_DELTA_THRESHOLD = 2 # e.g., +/- 5 shares
+HEDGING_DELTA_THRESHOLD = 1 # e.g., +/- 5 shares
 # Number of straddles (call/put pairs) to trade for the strategy.
 STRATEGY_MULTIPLIER = 1
 # Minimum days until expiration for options we consider for hedging.

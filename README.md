@@ -1,28 +1,28 @@
 # Gamma Scalper: An Automated Market-Neutral Options Strategy
 
-This project provides a reference implementation of an automated Gamma Scalping strategy using the Alpaca Trading API. It is designed to be a robust, high-performance starting point for traders and developers interested in sophisticated, market-neutral options strategies.
+This project provides a reference implementation of an automated Gamma Scalping strategy using the Alpaca Trading API. It's designed to be a robust, high-performance starting point for traders and developers interested in exploring sophisticated, market-neutral options strategies.
+
+Our goal is to make complex concepts accessible. If you're new to options, this guide will walk you through the core ideas. If you're an experienced trader, you'll find a powerful, configurable engine to build upon.
 
 **Disclaimer:** This project is for educational and informational purposes only. Trading financial instruments, especially options, involves substantial risk and is not suitable for all investors. The developers and Alpaca assume no responsibility for any financial losses incurred as a result of using this software. **Always run in a paper trading environment first.**
 
 ---
 
-## Strategy Overview
+## The Core Concept: A Race Against Time
 
-Gamma Scalping is a market-neutral strategy that seeks to profit from the volatility of an underlying asset. The core idea is to hold a **long gamma** position and then continuously hedge its **delta** to remain neutral.
+So, what is Gamma Scalping? Imagine you want to profit from a stock's choppiness without betting on its direction. That's what this strategy aims to do. At its heart, it's a race between two competing forces:
 
-1.  **Establish a Long Straddle:** The strategy begins by buying a call and a put option on the same underlying asset (`SPY` by default) with the same strike price and expiration date. This creates a position that is:
-    *   **Positive Gamma:** The position's delta accelerates in the direction of a price move (i.e., it becomes more positive as the price goes up and more negative as it goes down).
-    *   **Initially Delta-Neutral:** The combined delta of the call and put is close to zero, meaning the position has no initial directional bias.
+1.  **Volatility (Your Profit Engine - Gamma):** The strategy is long volatility. This means it profits if the stock is *more* volatile than the market expects. We achieve this by buying a "straddle" (a call and a put option at the same strike price), which gives us a position that benefits from price movement in *either* direction. This potential to profit from movement is driven by positive **Gamma**, which describes how our position becomes more directionally sensitive as the stock moves.
 
-2.  **Delta Hedging (The "Scalp"):** As the price of the underlying asset fluctuates, the position's delta will shift. The bot continuously monitors this delta and executes trades in the underlying stock to counteract the change.
-    *   If the stock price rises, the straddle's delta becomes positive. The bot sells shares to bring the total portfolio delta back to zero.
-    *   If the stock price falls, the straddle's delta becomes negative. The bot buys shares to bring the delta back to zero.
+2.  **Time Decay (Your Cost - Theta):** The options we buy are like an insurance policy against directional moves, and that policy has a daily cost. Every day that passes, the value of our options decreases slightly. This steady loss in value is called **Theta**.
 
-3.  **Profit Source:** The strategy aims to generate more profit from these small, frequent "scalping" trades than it loses from the options' time decay (theta). In essence, it is a bet that the *realized volatility* of the asset will be greater than the *implied volatility* priced into the options.
+**The goal is to make more money from scalping the small price fluctuations (harvesting volatility) than we lose to time decay.** We are making a bet that the *realized volatility* of the asset will be greater than the *implied volatility* priced into the options.
+
+---
 
 ## System Architecture
 
-The application is built using Python's `asyncio` library for high-performance, concurrent operations. Components are decoupled and communicate via queues, creating a resilient and scalable architecture.
+The application is built using Python's `asyncio` for high-performance, concurrent operations. Components are decoupled and communicate via queues, creating a resilient and scalable architecture. The system is designed to perform its core task—calculating delta—only when necessary, ensuring efficient operation even with high-frequency market data.
 
 ```mermaid
 flowchart TD
@@ -43,26 +43,29 @@ flowchart TD
     end
 
     A -- "Stock & Option Quotes" --> C
-    C -- "Update Prices" --> D
+    C -- "Update Prices (with spread filtering)" --> D
     D -- "Price moves > threshold<br/>OR heartbeat" --> H
     H -- "CALCULATE_DELTA" --> E
     D -- "Get Market Data" --> E
-    E -- "Calculated Greeks (Δ, Θ, Γ)" --> I
-    I -- "Greeks" --> F
+    E -- "Calculated Delta (Δ)" --> I
+    I -- "Δ" --> F
     G -- "Get Position State" --> F
-    F -- "Net Δ > threshold" --> J
-    J -- "Trade Command" --> G
+    F -- "Net Portfolio Δ > threshold" --> J
+    J -- "Hedge Trade Command" --> G
     G -- "Submit/Cancel/Close Orders" --> B
     B -- "Trade Fill Updates" --> G
 ```
 
 ### Key Components
 
-*   **`options_strategy.py`:** Intelligently screens for and selects the optimal straddle to purchase based on liquidity, time to expiration, and a `abs(theta)/gamma` score to find the most "gamma-cheap" options.
-*   **`market/state.py`:** Subscribes to real-time Alpaca data streams for the stock and options, holding the latest prices and triggering calculations.
-*   **`engine/delta_engine.py`:** Utilizes the industry-standard `QuantLib` library to perform high-precision calculations for option Greeks. It specifically uses a binomial tree pricing model (Cox-Ross-Rubinstein), which is necessary for accurately valuing American-style options by accounting for the possibility of early exercise.
-*   **`strategy/hedging_strategy.py`:** The "brain" of the operation. It consumes Greeks, calculates the portfolio's net delta, and decides when to send a hedging trade command.
-*   **`portfolio/position_manager.py`:** Manages the portfolio state, executes trades via the Alpaca API, and listens for fill confirmations to robustly track the current position.
+*   **Market Data & State (`market/state.py`):** Subscribes to real-time Alpaca data streams for the stock and its options. To avoid acting on illiquid or "bad" quotes, it maintains a moving average of the bid-ask spread and rejects any incoming quote with a spread that's significantly wider than this average.
+*   **The Calculation Core (`engine/delta_engine.py`):** This is where the heavy lifting happens. Triggered only when the stock price moves significantly, it uses the industry-standard `QuantLib` library to calculate option Greeks.
+    *   It uses a **binomial tree pricing model** (Cox-Ross-Rubinstein), necessary for accurately valuing American-style options with the potential for early exercise.
+    *   It takes market prices as input and first performs a self-consistency check to **back-solve for implied volatility**. It then uses this fresh, real-world volatility to compute the Greeks (Delta, Theta, and Gamma).
+*   **The Decision Maker (`strategy/hedging_strategy.py`):** This component has one job: ingest the calculated delta from a queue and decide if a hedge is necessary. It compares the portfolio's net delta to a configurable "dead band" (`HEDGING_DELTA_THRESHOLD`). If the delta has strayed too far from neutral, it emits a trade command to rebalance.
+*   **The Executor (`portfolio/position_manager.py`):** This is the execution layer. It takes trade commands and handles all interaction with the Alpaca API. It contains important logic to manage order submission robustly, ensuring that new orders don't conflict with existing ones (using locks) and correctly handling trades that cross from a long to a short position.
+
+---
 
 ## Getting Started
 
@@ -73,11 +76,9 @@ flowchart TD
 
 ### 2. Installation
 
-This project uses `uv` for fast environment and package management.
-
 1.  **Install `uv`**
 
-    If you don't have `uv` installed, you can often install it with `pip`:
+    If you don't have `uv` installed, you can install it with `pip`:
     ```bash
     pip install uv
     ```
@@ -85,7 +86,6 @@ This project uses `uv` for fast environment and package management.
 2.  **Clone the repository and set up the environment**
 
     ```bash
-    # Clone the repository
     git clone https://github.com/alpacahq/gamma-scalper.git
     cd gamma-scalper
 
@@ -93,7 +93,7 @@ This project uses `uv` for fast environment and package management.
     uv venv
     source .venv/bin/activate # On Windows, use `.venv\Scripts\activate`
 
-    # Install the project dependencies in editable mode
+    # Install the project dependencies
     uv pip install -e .
     ```
 
@@ -105,7 +105,7 @@ Create a `.env` file in the project root by copying the example:
 cp .env.example .env
 ```
 
-Now, edit the `.env` file with your Alpaca API keys and desired settings:
+Now, edit the `.env` file with your Alpaca API keys:
 
 ```
 # .env file
@@ -114,27 +114,81 @@ TRADING_API_KEY="YOUR_PAPER_API_KEY"
 TRADING_API_SECRET="YOUR_PAPER_API_SECRET"
 ```
 
-You can also adjust the strategy parameters in `config.py`. Key parameters include:
-*   `HEDGING_ASSET`: The underlying asset to trade (e.g., "SPY").
-*   `HEDGING_DELTA_THRESHOLD`: The "dead band" for delta. A hedge is triggered if `abs(net_delta)` exceeds this.
-*   `MIN/MAX_EXPIRATION_DAYS`: The window for selecting option contracts.
-*   `PRICE_CHANGE_THRESHOLD` / `HEARTBEAT_TRIGGER_SECONDS`: Conditions for triggering a new delta calculation.
+Next, dive into `config.py` to tune the strategy's behavior.
 
-### 4. Running the Bot
+---
+
+## Configuration Deep Dive (`config.py`)
+
+This is where you can truly make the strategy your own. Here are the key parameters and what they mean:
+
+| Parameter | Default | Description |
+| --- | --- | --- |
+| `HEDGING_ASSET` | `"SPY"` | The underlying asset to trade. |
+| `LOGGING_DIRECTORY` | `"trades"` | Where to save a log of all executed trades for later analysis. |
+| `INITIALIZATION_MODE` | `"init"` | `"init"`: Liquidates all existing positions (stock and options) for the asset and starts fresh by finding a new straddle. `"resume"`: Assumes you already have a straddle and syncs with your portfolio to begin hedging immediately. |
+| `HEDGING_DELTA_THRESHOLD` | `2.0` | **The most important strategy parameter.** How far can delta drift from zero before we hedge? See the detailed discussion below. |
+| `STRATEGY_MULTIPLIER` | `1` | The number of straddles to purchase. This scales the size of your position and subsequent hedges. |
+| `MIN_EXPIRATION_DAYS` | `30` | The minimum days to expiration when searching for an options contract. |
+| `MAX_EXPIRATION_DAYS` | `90` | The maximum days to expiration. |
+| `MIN_OPEN_INTEREST` | `100` | The minimum open interest for an options contract to be considered, ensuring a baseline of liquidity. |
+| `THETA_WEIGHT` | `1.0` | A weight to adjust the importance of theta in the straddle scoring function. |
+| `DEFAULT_RISK_FREE_RATE` | `0.05` | A fallback risk-free rate. The application first tries to fetch the live rate from the US Treasury yield curve; if that fails, it uses this default. |
+| `PRICE_CHANGE_THRESHOLD` | `0.05` | A delta calculation is triggered if the underlying price moves by this amount (in dollars). |
+| `HEARTBEAT_TRIGGER_SECONDS` | `5` | In a quiet market, this ensures delta is recalculated at least this often (in seconds). |
+| `TRADE_COMMAND_TTL_SECONDS` | `5` | A safety check. If a trade command is older than this when the Position Manager reads it, the command is discarded as stale. |
+
+
+### The Hedging Delta Threshold Trade-Off
+
+This parameter is the heart of your strategy's performance. It defines how sensitive you are to market movements.
+
+*   **Set it too high:** You will rarely trade ("scalp"). Your failure to capture profits from small fluctuations means your position will likely be slowly eaten away by time decay (theta).
+*   **Set it too low:** You will trade constantly. Each trade costs you money by crossing the bid-ask spread, and these transaction costs will overwhelm the small profits from each scalp.
+
+The goal is to find the "Goldilocks" zone: a threshold tight enough to capture real volatility but wide enough to ignore noise and avoid being bled by execution costs.
+
+---
+
+## The Initialization Process: Finding the Best Straddle
+
+When you start the bot in `init` mode, it goes on a hunt for the most "gamma-cheap" straddle. The goal is to find the position that gives you the most profit potential (Gamma) for the lowest cost (Theta + Spread).
+
+It does this by calculating a score for every eligible straddle within your defined expiration window and liquidity constraints:
+
+\[ \text{Score} = \frac{(\text{abs}(\text{Theta}) \times \text{Weight}) + \text{Transaction Cost}}{\text{Gamma}} \]
+
+The bot calculates this score for all candidates and chooses the one with the **lowest score**. This systematic approach ensures you start with the most cost-effective position possible.
+
+---
+
+## Running the Bot
+
+Once configured, running the bot is simple:
 
 ```bash
 python main.py
 ```
 
-The bot will start, initialize its position (or find a new one if in `init` mode), and begin hedging.
+The bot will start, initialize its position (based on your chosen `INITIALIZATION_MODE`), and begin its cycle of monitoring, calculating, and hedging.
+
+---
+
+## A Framework for Your Own Strategies
+
+This project is a powerful engine, but it's not a complete, "fire and forget" system. It's a foundation for you to build on. Here are some key areas where you can add your own intelligence:
+
+*   **Opportunity Identification:** The bot knows *how* to scalp, but not *when*. A great enhancement would be to integrate a model that predicts future volatility. You could then run the scalper only when you forecast that realized volatility will be higher than the implied volatility priced into the options.
+
+*   **Dynamic Delta Thresholds:** The hedging threshold is currently static. A more advanced system might make it adaptive. For example, you could tighten the threshold when bid-ask spreads are narrow and widen it when they are wide.
+
+*   **Smarter Exit & Risk Management:** The current version doesn't have a defined exit strategy. You could build in logic to:
+    *   **Set a stop-loss** to manage risk.
+    *   **Exit the position** after a certain amount of time, or when the opportunity decays.
+    *   **Detect a strong trend.** A straddle becomes profitable on its own in a strong trend. You might want to stop hedging and let the position run to capture that larger directional profit.
+
+---
 
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details. 
-
-
-NEXT STEPS
-    - find the opportunities (need to predict vol and find mispricings)
-    - dynamic delta threshold
-    - exits (when has the oppportunity passed, stop loss, letting it run)
-    - improved pricing models (discrete dividends, finer grained yield curves)
