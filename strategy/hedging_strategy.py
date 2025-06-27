@@ -41,16 +41,16 @@ class TradingStrategy:
                 total_hedge_delta = current_position + pending_position
 
                 # Calculate net risk
-                net_delta = total_options_delta + total_hedge_delta
+                net_delta_per_share = (total_options_delta + total_hedge_delta) / STRATEGY_MULTIPLIER
                 
-                logger.info(f"New Greeks received. Options Δ: {total_options_delta:+.2f}, Hedge Δ: {total_hedge_delta}, Net Δ: {net_delta:+.2f}")
+                logger.info(f"New Greeks received. Options Δ: {total_options_delta:+.2f}, Hedge Δ: {total_hedge_delta}, Net Δ Per Share: {net_delta_per_share:+.2f}")
 
                 # Apply the "dead band" logic, scaling the threshold by the strategy size.
-                if abs(net_delta) > (HEDGING_DELTA_THRESHOLD * STRATEGY_MULTIPLIER):
+                if abs(net_delta_per_share) > HEDGING_DELTA_THRESHOLD:
                     # Calculate trade needed to return to zero
-                    shares_to_trade = -round(net_delta)
+                    shares_to_trade = -round(net_delta_per_share * STRATEGY_MULTIPLIER)
                     
-                    logger.warning(f"Hedge threshold breached! Net Delta is {net_delta:+.2f}. Issuing command to trade {shares_to_trade} shares.")
+                    logger.warning(f"Hedge threshold breached! Net Delta is {net_delta_per_share:+.2f}. Issuing command to trade {shares_to_trade} shares.")
 
                     # Create and send the time-stamped command
                     await self._queue_trade_command(shares_to_trade)

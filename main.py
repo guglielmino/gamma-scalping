@@ -24,14 +24,15 @@ async def main():
     trade_action_queue = asyncio.Queue(maxsize=1)
 
     position_manager = PositionManager(trade_action_queue, shutdown_event)
-    
+
+    # --- Perform one-time setup ---
+    await position_manager.initialize_position()
+    await asyncio.sleep(5) # Wait for the liquidation to complete
+
     # --- Start listener FIRST to capture all fills ---
     # It needs to be running before we open the initial straddle.
     fill_listener_task = asyncio.create_task(position_manager.fill_listener_loop())
     await asyncio.sleep(5) # Wait for the listener to subscribe to the trade updates
-
-    # --- Perform one-time setup ---
-    await position_manager.initialize_position()
 
     # If in 'init' mode, also open the initial options position
     # Client for fetching stock data, needed for strangle opening
