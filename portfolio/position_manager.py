@@ -173,8 +173,6 @@ class PositionManager:
     async def _handle_trade_fill(self, data):
         """The callback handler for trade update events."""
         logger.info(f"Trade update received: {data.event}")
-        if data.order.symbol != HEDGING_ASSET:
-            return
         
         if data.event in ['fill', 'partial_fill', 'canceled', 'rejected']:
             if data.event == 'partial_fill':
@@ -185,6 +183,25 @@ class PositionManager:
             fill_qty = int(order.filled_qty)
             side = order.side
             fill_price = float(order.filled_avg_price)
+
+            # --- Only process trades for the hedging asset ---
+            if data.order.symbol != HEDGING_ASSET:
+                # This is likely an option trade from initialization.
+                # We log it but don't use it to update hedging state.
+                logger.info(f"Received fill for non-hedging asset {data.order.symbol}. Logging and ignoring for state.")
+                # --- Log Trade to File ---
+                log_entry = {
+                    "timestamp": datetime.now().isoformat(),
+                    "symbol": order.symbol,
+                    "side": side.value,
+                    "quantity": fill_qty,
+                    "fill_price": fill_price,
+                    "pnl": 0
+                }
+                with open(self.trade_log_file, 'a') as f:
+                    f.write(json.dumps(log_entry) + '\n')
+
+                return
             
             # --- FIFO P&L Calculation ---
             pnl_this_trade = 0.0
@@ -316,6 +333,7 @@ class PositionManager:
         """Listens to the trading stream for fill events."""
         logger.info("Fill Listener started.")
         self.trade_stream.subscribe_trade_updates(self._handle_trade_fill)
+        logger.info("Fill Listener subscribed to trade updates.")
         # The SDK handles the reconnect logic internally.
         # We call _run_forever() because run() is a blocking call that starts its own event loop.
         await self.trade_stream._run_forever()

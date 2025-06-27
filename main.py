@@ -1,11 +1,3 @@
-# delta_hedger/main.py
-#TODO: pnl tracking (test) [done]   
-#TODO: scalp trade logging [done]
-#TODO: paginate the options search [done]
-#TODO: improve the straddle scoring / selection logic [done]
-#TODO: update the risk free rate [done]
-#TODO: update the dividend yield [done]
-
 import asyncio
 import logging
 import config
@@ -32,6 +24,11 @@ async def main():
     trade_action_queue = asyncio.Queue(maxsize=1)
 
     position_manager = PositionManager(trade_action_queue, shutdown_event)
+    
+    # --- Start listener FIRST to capture all fills ---
+    # It needs to be running before we open the initial straddle.
+    fill_listener_task = asyncio.create_task(position_manager.fill_listener_loop())
+    await asyncio.sleep(5) # Wait for the listener to subscribe to the trade updates
 
     # --- Perform one-time setup ---
     await position_manager.initialize_position()
@@ -43,6 +40,7 @@ async def main():
     
     if position_manager.call_option_symbol is None or position_manager.put_option_symbol is None:
         logger.critical("Failed to find an initial straddle position. Cannot start strategy. Exiting.")
+        fill_listener_task.cancel() # Don't leave the task running
         return # Exit the main function gracefully
     
     # --- Initialize Communication Queues ---
@@ -69,11 +67,13 @@ async def main():
     tasks = [
         market_manager.run(),
         position_manager.trade_executor_loop(),
-        position_manager.fill_listener_loop(),
         delta_engine.run(),
         trading_strategy.run()
     ]
     
+    # Add the listener task to the list of tasks to manage
+    tasks.append(fill_listener_task)
+
     logger.info("Application starting. Press Ctrl+C to shut down gracefully.")
     
     # --- Run until interrupted ---

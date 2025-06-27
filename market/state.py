@@ -3,7 +3,7 @@
 import asyncio
 import time
 import logging
-from alpaca.data.live import OptionDataStream, StockDataStream
+from clients.user_agent_mixin import OptionDataStreamSigned, StockDataStreamSigned
 from config import (
     API_KEY, API_SECRET, HEDGING_ASSET,
     PRICE_CHANGE_THRESHOLD, HEARTBEAT_TRIGGER_SECONDS
@@ -44,8 +44,8 @@ class MarketDataManager:
         self.dividend_yield = get_dividend_yield()
     
         # Alpaca stream clients
-        self.option_stream = OptionDataStream(API_KEY, API_SECRET)
-        self.stock_stream = StockDataStream(API_KEY, API_SECRET)
+        self.option_stream = OptionDataStreamSigned(API_KEY, API_SECRET)
+        self.stock_stream = StockDataStreamSigned(API_KEY, API_SECRET)
 
     async def _check_and_trigger(self):
         """Internal method to check conditions and send a trigger."""
