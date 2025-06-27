@@ -156,9 +156,9 @@ When you start the bot in `init` mode, it goes on a hunt for the most "gamma-che
 
 It does this by calculating a score for every eligible straddle within your defined expiration window and liquidity constraints:
 
-\[ \text{Score} = \frac{(\text{abs}(\text{Theta}) \times \text{Weight}) + \text{Transaction Cost}}{\text{Gamma}} \]
+`Score = (abs(Theta) * THETA_WEIGHT + Transaction Cost) / Gamma`
 
-The bot calculates this score for all candidates and chooses the one with the **lowest score**. This systematic approach ensures you start with the most cost-effective position possible.
+Theta and Gamma are computed from market prices and the transaction cost is approximated as the sum of the spreads of our two options contracts (essentially the cost of entering and exiting the position with no price change).  The bot calculates this score for all candidates and chooses the one with the **lowest score**. This systematic approach ensures you start with the most cost-effective position possible.
 
 ---
 
@@ -176,7 +176,7 @@ The bot will start, initialize its position (based on your chosen `INITIALIZATIO
 
 ## A Framework for Your Own Strategies
 
-This project is a powerful engine, but it's not a complete, "fire and forget" system. It's a foundation for you to build on. Here are some key areas where you can add your own intelligence:
+This project is a powerful engine, but it's not a complete, "fire and forget" system. It has not been stress tested under real market conditions and should be thought of as a foundation for you to build on. Here are some key areas where you can add your own intelligence:
 
 *   **Opportunity Identification:** The bot knows *how* to scalp, but not *when*. A great enhancement would be to integrate a model that predicts future volatility. You could then run the scalper only when you forecast that realized volatility will be higher than the implied volatility priced into the options.
 
