@@ -1,5 +1,27 @@
 # delta_hedger/engine/delta_engine.py
 
+"""
+The computational core of the gamma scalping application.
+
+This module is responsible for all the complex financial mathematics involved in
+options pricing and risk management. It leverages the industry-standard QuantLib
+library to perform these calculations.
+
+The central concept is a two-step process:
+1.  **Calculate Implied Volatility (IV):** Given the current market price of an
+    option, we "back-solve" for the volatility that the market is pricing in.
+    This is a crucial step because volatility is the most uncertain input in
+    an options pricing model.
+2.  **Calculate Greeks:** Using the freshly calculated IV, we then compute the
+    option's "Greeks" (Delta, Gamma, Theta). These metrics are essential for
+    managing the risk of the position.
+
+For American-style options, which can be exercised at any time before expiration,
+a simple Black-Scholes formula is insufficient. This engine therefore uses a
+**Binomial Pricing Model** (Cox-Ross-Rubinstein), which is a numerical method
+that correctly handles the early-exercise feature of American options.
+"""
+
 import asyncio
 import random
 import time
@@ -21,7 +43,27 @@ def calculate_implied_volatility(
     dividend_yield: float,
     n_steps: int = 100
 ) -> float:
-    """Calculates the implied volatility for an American option using a binomial tree."""
+    """
+    Calculates the implied volatility for a single American option using a binomial tree.
+
+    This function takes all the known market parameters and the option's current price,
+    and then uses QuantLib's solver to find the volatility value that makes the
+    theoretical price match the market price.
+
+    Args:
+        option_market_price: The current mid-price of the option.
+        stock_price: The current mid-price of the underlying stock.
+        strike: The strike price of the option.
+        expiry_days: The number of calendar days until the option expires.
+        option_type: 'call' or 'put'.
+        risk_free_rate: The interpolated risk-free interest rate.
+        dividend_yield: The annualized dividend yield of the stock.
+        n_steps: The number of steps in the binomial tree model. More steps lead
+                 to higher accuracy but longer computation time.
+
+    Returns:
+        The calculated implied volatility as a float, or NaN if the calculation fails.
+    """
     ql.Settings.instance().evaluationDate = ql.Date.todaysDate()
 
     # print(option_market_price, stock_price, strike, expiry_days, option_type, risk_free_rate, dividend_yield, n_steps)
@@ -73,20 +115,39 @@ def calculate_single_option_greeks(
 ) -> dict[str, float]:
     """
     Calculates the requested Greeks for a single American option.
-    It first calculates implied volatility from the market price.
+
+    This function first calculates the implied volatility from the market price,
+    then uses that volatility to price the option and derive its Greeks. This ensures
+    the risk metrics are consistent with the latest market data.
+
+    Args:
+        option_market_price: The current mid-price of the option.
+        stock_price: The current mid-price of the underlying stock.
+        strike: The strike price of the option.
+        expiry_days: The number of calendar days until the option expires.
+        option_type: 'call' or 'put'.
+        risk_free_rate: The interpolated risk-free interest rate.
+        dividend_yield: The annualized dividend yield of the stock.
+        requested_greeks: A list of strings of the greeks to calculate (e.g., ['delta', 'gamma']).
+        iv_steps: Number of binomial steps for the IV calculation (can be lower for speed).
+        greeks_steps: Number of binomial steps for the final Greek calculation (can be higher for accuracy).
+
+    Returns:
+        A dictionary containing the calculated Greek values.
     """
     
-    # Step 1: Calculate Implied Volatility using the "fast" engine
+    # Step 1: Calculate Implied Volatility using a potentially faster, lower-step model.
     implied_vol = calculate_implied_volatility(
         option_market_price, stock_price, strike, expiry_days,
         option_type, risk_free_rate, dividend_yield, n_steps=iv_steps
     )
     
     if implied_vol is None or implied_vol != implied_vol: # Check for NaN
-        logger.warning(f"Skipping Greeks calculation due to failed IV calculation.")
+        logger.warning(f"Skipping Greeks calculation for {option_type} K={strike} due to failed IV calculation.")
         return {greek: float('nan') for greek in requested_greeks}
 
-    # Step 2: Calculate Greeks using the "high-precision" engine
+    # Step 2: Recalculate Greeks using a more precise, higher-step model with the found IV.
+    # This setup is largely identical to the IV function, but now we input our calculated IV.
     ql.Settings.instance().evaluationDate = ql.Date.todaysDate()
 
     if option_type.lower() == 'call':
@@ -101,7 +162,7 @@ def calculate_single_option_greeks(
     riskfree_handle = ql.YieldTermStructureHandle(ql.FlatForward(0, ql.TARGET(), risk_free_rate, ql.Actual365Fixed()))
     dividend_handle = ql.YieldTermStructureHandle(ql.FlatForward(0, ql.TARGET(), dividend_yield, ql.Actual365Fixed()))
     
-    # Use the calculated implied volatility for this process
+    # The key difference: use the *calculated* implied volatility for this pricing process.
     volatility_handle = ql.BlackVolTermStructureHandle(ql.BlackConstantVol(0, ql.TARGET(), implied_vol, ql.Actual365Fixed()))
     bsm_process = ql.BlackScholesMertonProcess(spot_handle, dividend_handle, riskfree_handle, volatility_handle)
     
@@ -125,8 +186,13 @@ def calculate_single_option_greeks(
 
 class DeltaEngine:
     """
-    Listens for triggers, fetches the latest market data from the MarketDataManager,
-    calculates portfolio options delta, and pushes it to a queue.
+    A long-running service that orchestrates the calculation of portfolio delta.
+
+    This class acts as a background worker. It listens for trigger messages from
+    the MarketDataManager, and upon receiving one, it fetches the latest market
+    data, calls the appropriate QuantLib functions to calculate the delta of the
+    call and put options, sums them, and publishes the net delta to the
+    TradingStrategy via an output queue.
     """
     def __init__(
         self,
@@ -135,13 +201,27 @@ class DeltaEngine:
         delta_queue: asyncio.Queue,
         shutdown_event: asyncio.Event
     ):
+        """
+        Initializes the DeltaEngine.
+
+        Args:
+            market_manager: A reference to the MarketDataManager to access live prices.
+            trigger_queue: The input queue for receiving calculation triggers.
+            delta_queue: The output queue for publishing calculated deltas.
+            shutdown_event: The event to signal graceful shutdown.
+        """
         self.market_manager = market_manager
         self.trigger_queue = trigger_queue
         self.delta_queue = delta_queue
         self.shutdown_event = shutdown_event
 
     async def _publish_result(self, delta: float):
-        """Puts the calculated delta into the output queue, overwriting any stale data."""
+        """
+        Puts the calculated delta into the output queue.
+
+        It first clears any stale, unprocessed delta value from the queue to ensure
+        the TradingStrategy only ever acts on the most recent calculation.
+        """
         try:
             # Clear any old delta value that the strategy hasn't consumed yet.
             if not self.delta_queue.empty():
@@ -149,58 +229,63 @@ class DeltaEngine:
                 self.delta_queue.task_done()
             self.delta_queue.put_nowait(delta)
         except asyncio.QueueFull:
-            pass # Safe to ignore, another task will likely add a fresher value.
+            # This is safe to ignore. It means a new value was produced before
+            # the old one was consumed, and we are just replacing it.
+            pass
 
     async def run(self):
+        """The main loop for the Delta Engine task."""
         logger.info("Delta Engine started. Waiting for triggers...")
         while not self.shutdown_event.is_set():
-            # Wait for a trigger from the MarketDataManager
             try:
+                # Wait for a trigger from the MarketDataManager.
+                # A timeout is used to allow the shutdown event to be checked periodically.
                 await asyncio.wait_for(self.trigger_queue.get(), timeout=1.0)
             except asyncio.TimeoutError:
                 continue
 
-            # Active cycle: process triggers until the queue is empty
+            # --- Calculation Cycle ---
+            # Once triggered, process all items currently in the queue to catch up
+            # with any rapid market movements, then return to waiting.
             while True:
-                stock = self.market_manager.stock_price
-                call = self.market_manager.call_option_price
-                put = self.market_manager.put_option_price
-                # print(stock, call, put)
+                # Get a consistent snapshot of market data.
+                stock_price = self.market_manager.stock_price
+                call_price = self.market_manager.call_option_price
+                put_price = self.market_manager.put_option_price
 
-                # Offload the blocking, CPU-intensive work to a separate thread.
-                put_greeks = await asyncio.to_thread(
+                # The QuantLib calculations are CPU-bound and would block the async event
+                # loop. We run them in a separate thread pool using `to_thread` to
+                # keep the application responsive.
+                put_greeks = asyncio.to_thread(
                     calculate_single_option_greeks,
-                    put,
-                    stock,
+                    put_price, stock_price,
                     self.market_manager.put_option_strike,
                     (self.market_manager.put_option_expiry - datetime.now().date()).days,
-                    "put",
-                    self.market_manager.risk_free_rate,
-                    self.market_manager.dividend_yield,
+                    "put", self.market_manager.risk_free_rate, self.market_manager.dividend_yield,
                     ['delta']
                 )
 
-                call_greeks = await asyncio.to_thread(
+                call_greeks = asyncio.to_thread(
                     calculate_single_option_greeks,
-                    call,
-                    stock,
+                    call_price, stock_price,
                     self.market_manager.call_option_strike,
                     (self.market_manager.call_option_expiry - datetime.now().date()).days,
-                    "call",
-                    self.market_manager.risk_free_rate,
-                    self.market_manager.dividend_yield,
+                    "call", self.market_manager.risk_free_rate, self.market_manager.dividend_yield,
                     ['delta']
                 )
-
-                delta = put_greeks["delta"] + call_greeks["delta"]
                 
+                # The net delta of the straddle is the sum of the individual deltas.
+                delta = put_greeks["delta"] + call_greeks["delta"]
+                # Publish the final result to the TradingStrategy.
                 await self._publish_result(delta)
                 self.trigger_queue.task_done()
 
+                # Check if another trigger came in while we were calculating.
+                # If so, loop again immediately. If not, break and wait for a new trigger.
                 try:
                     self.trigger_queue.get_nowait()
                 except asyncio.QueueEmpty:
-                    logger.debug("Delta trigger queue empty. Returning to idle.")
+                    logger.debug("Delta trigger queue empty. Returning to idle state.")
                     break
         
         logger.info("Delta Engine shutting down.")
