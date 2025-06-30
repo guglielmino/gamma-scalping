@@ -16,7 +16,7 @@ API_SECRET = os.getenv("TRADING_API_SECRET")
 # --- Strategy & Ticker Configuration ---
 # The underlying asset for the gamma scalping strategy.
 # This is the stock or ETF you want to trade.
-HEDGING_ASSET = "SPY"
+HEDGING_ASSET = "NVDA"
 # The directory where trade execution logs will be stored.
 TRADE_LOG_DIR = "trades"
 # --- Initialization Mode ---

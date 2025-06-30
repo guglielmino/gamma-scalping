@@ -256,7 +256,7 @@ class DeltaEngine:
                 # The QuantLib calculations are CPU-bound and would block the async event
                 # loop. We run them in a separate thread pool using `to_thread` to
                 # keep the application responsive.
-                put_greeks = asyncio.to_thread(
+                put_greeks_task = asyncio.to_thread(
                     calculate_single_option_greeks,
                     put_price, stock_price,
                     self.market_manager.put_option_strike,
@@ -265,7 +265,7 @@ class DeltaEngine:
                     ['delta']
                 )
 
-                call_greeks = asyncio.to_thread(
+                call_greeks_task = asyncio.to_thread(
                     calculate_single_option_greeks,
                     call_price, stock_price,
                     self.market_manager.call_option_strike,
@@ -273,7 +273,9 @@ class DeltaEngine:
                     "call", self.market_manager.risk_free_rate, self.market_manager.dividend_yield,
                     ['delta']
                 )
-                
+
+                put_greeks, call_greeks = await asyncio.gather(put_greeks_task, call_greeks_task)
+
                 # The net delta of the straddle is the sum of the individual deltas.
                 delta = put_greeks["delta"] + call_greeks["delta"]
                 # Publish the final result to the TradingStrategy.
