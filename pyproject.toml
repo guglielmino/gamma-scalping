@@ -18,7 +18,7 @@ dependencies = [
     "python-dotenv",
     "QuantLib-Python",
     "scipy",
-    "certifi"
+    "certifi",
 ]
 
 [project.optional-dependencies]
