@@ -17,6 +17,8 @@ dependencies = [
     "alpaca-py",
     "python-dotenv",
     "QuantLib-Python",
+    "scipy",
+    "certifi"
 ]
 
 [project.optional-dependencies]

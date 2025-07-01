@@ -24,7 +24,7 @@ TRADE_LOG_DIR = "trades"
 #         and its options, then establish a new straddle to start fresh.
 # 'resume': The application will assume a straddle is already in place and will
 #           sync with the existing positions to begin hedging immediately.
-INITIALIZATION_MODE = "init"
+INITIALIZATION_MODE = "resume"
 
 
 # --- Hedging Strategy Parameters ---

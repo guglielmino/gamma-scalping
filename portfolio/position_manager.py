@@ -22,7 +22,7 @@ import logging
 import os
 import json
 from datetime import datetime
-from alpaca.trading.client import TradingClient
+from clients.user_agent_mixin import TradingClientSigned
 from alpaca.trading.requests import MarketOrderRequest, ClosePositionRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, AssetClass
 from alpaca.trading.stream import TradingStream
@@ -53,7 +53,7 @@ class PositionManager:
         """
         self.trade_action_queue = trade_action_queue
         self.shutdown_event = shutdown_event
-        self.trading_client = TradingClient(API_KEY, API_SECRET, paper=IS_PAPER_TRADING)
+        self.trading_client = TradingClientSigned(API_KEY, API_SECRET, paper=IS_PAPER_TRADING)
         self.trade_stream = TradingStream(API_KEY, API_SECRET, paper=IS_PAPER_TRADING)
         
         # --- Critical State ---
