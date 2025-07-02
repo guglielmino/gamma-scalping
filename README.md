@@ -60,6 +60,7 @@ flowchart TD
 *   **The Calculation Core (`engine/delta_engine.py`):** This is where the heavy lifting happens. Triggered only when the stock price moves significantly, it uses the industry-standard `QuantLib` library to calculate option Greeks.
     *   It uses a **binomial tree pricing model** (Cox-Ross-Rubinstein), necessary for accurately valuing American-style options with the potential for early exercise.
     *   It takes market prices as input and first performs a self-consistency check to **back-solve for implied volatility**. It then uses this fresh, real-world volatility to compute the Greeks (Delta, Theta, and Gamma).
+    *   ⚠️ Note: The current implementation uses a continuous approximation for the dividend yield. While this is convenient for modeling, it can produce inaccurate risk metrics if a dividend is expected soon. For greater accuracy—especially near dividend dates—a discrete yield model should be used.
 *   **The Decision Maker (`strategy/hedging_strategy.py`):** This component has one job: ingest the calculated delta from a queue and decide if a hedge is necessary. It compares the portfolio's net delta to a configurable "dead band" (`HEDGING_DELTA_THRESHOLD`). If the delta has strayed too far from neutral, it emits a trade command to rebalance.
 *   **The Executor (`portfolio/position_manager.py`):** This is the execution layer. It takes trade commands and handles all interaction with the Alpaca API. It contains important logic to manage order submission robustly, ensuring that new orders don't conflict with existing ones (using locks) and correctly handling trades that cross from a long to a short position.
 
@@ -184,6 +185,7 @@ This project is a powerful engine, but it's not a complete, "fire and forget" sy
     *   **Set a stop-loss** to manage risk.
     *   **Exit the position** after a certain amount of time, or when the opportunity decays.
     *   **Detect a strong trend.** A straddle becomes profitable on its own in a strong trend. You might want to stop hedging and let the position run to capture that larger directional profit.
+*   **Improved Pricing Models:** The current system uses a binomial tree with a continuous dividend yield approximation. Future versions could explore models with discrete dividend yields for greater accuracy near ex-dividend dates, or even shift to analytic models for faster computation in latency-sensitive environments.
  
 ---
 
