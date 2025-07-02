@@ -4,8 +4,6 @@ This project provides a reference implementation of an automated Gamma Scalping 
 
 Our goal is to make complex concepts accessible. If you're new to options, this guide will walk you through the core ideas. If you're an experienced trader, you'll find a powerful, configurable engine to build upon.
 
-**Disclaimer:** This project is for educational and informational purposes only. Trading financial instruments, especially options, involves substantial risk and is not suitable for all investors. The developers and Alpaca assume no responsibility for any financial losses incurred as a result of using this software. **Always run in a paper trading environment first.**
-
 ---
 
 ## The Core Concept: A Race Against Time
