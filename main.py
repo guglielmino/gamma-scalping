@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import config
+import os
 
 # Import the core components of the application. Each component is designed
 # to run as an independent, asynchronous task.
@@ -15,6 +16,12 @@ from strategy.options_strategy import open_initial_straddle
 logging.basicConfig(level=config.LOG_LEVEL, format=config.LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
+try:
+    import certifi
+    os.environ['SSL_CERT_FILE'] = certifi.where()
+    os.environ['SSL_CERT_DIR'] = ''
+except ImportError:
+    pass
 
 async def main():
     """
