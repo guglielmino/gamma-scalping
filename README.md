@@ -188,12 +188,6 @@ This project is a powerful engine, but it's not a complete, "fire and forget" sy
 *   **Improved Pricing Models:** The current system uses a binomial tree with a continuous dividend yield approximation. Future versions could explore models with discrete dividend yields for greater accuracy near ex-dividend dates, or even shift to analytic models for faster computation in latency-sensitive environments.
  
 ---
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details. 
-
----
 <div style="font-size: 0.8em;">
 Disclosures
 
@@ -205,3 +199,10 @@ All investments involve risk, and the past performance of a security, or financi
 
 Please note that this article is for general informational purposes only and is believed to be accurate as of the posting date but may be subject to change. The examples above are for illustrative purposes only and should not be considered investment advice. 
 
+---
+ 
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details. 
+
+---
