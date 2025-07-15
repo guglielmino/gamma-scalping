@@ -1,18 +1,18 @@
 # Gamma Scalper: An Automated Market-Neutral Options Strategy
 
-This project provides a reference implementation of an automated Gamma Scalping strategy using the Alpaca Trading API. It's designed to be a robust, high-performance starting point for traders and developers interested in exploring sophisticated, market-neutral options strategies.
+This project provides a reference implementation of an automated Gamma Scalping strategy using the Alpaca Trading API. It's designed to be a flexible and technically sound example for traders and developers interested in exploring market-neutral options strategies.
 
-Our goal is to make complex concepts accessible. If you're new to options, this guide will walk you through the core ideas. If you're an experienced trader, you'll find a powerful, configurable engine to build upon.
+Our goal is to make complex concepts accessible. If you're new to options, this guide will walk you through the core ideas. If you're an experienced trader, you'll find a configurable engine to build upon.
 
 ---
 
 ## The Core Concept: A Race Against Time
 
-So, what is Gamma Scalping? Imagine you want to profit from a stock's choppiness without betting on its direction. That's what this strategy aims to do. This strategy is long volatility, meaning it profits if the stock is *more* volatile than the market expects.  At its heart, it's a race between two competing forces:
+So, what is Gamma Scalping? Imagine you want to profit from a stock's price movements without betting on its direction. That's what this strategy aims to do. This strategy is long volatility, meaning it profits if the stock is *more* volatile than the market expects.  At its heart, it's a race between two competing forces:
 
 1.  **Volatility (Your Profit Engine - Gamma):** We begin by buying a "straddle" (a call and a put at the same strike) to get positive **Gamma**, which makes our position benefit from movement in either direction. We then convert volatility into profit by "scalping": repeatedly buying and selling the underlying stock as it fluctuates. 
 
-2.  **Time Decay (Your Cost - Theta):** The options we buy are like an insurance policy allowing us to scalp the underlying without exposure to directional risk. This insurance incurs a daily cost. Every day that passes, the value of our options decreases slightly. This steady loss in value is called **Theta**.
+2.  **Time Decay (Your Cost - Theta):** The options we buy allow us to scalp the underlying while reducing exposure to directional risk. A daily cost is incurred. Every day that passes, the value of our options decreases slightly. This steady loss in value is called **Theta**.
 
 **The goal is to make more money from scalping the small price fluctuations (harvesting volatility) than we lose to time decay.** We are making a bet that the *realized volatility* of the asset will be greater than the *implied volatility* priced into the options.
 
@@ -20,7 +20,7 @@ So, what is Gamma Scalping? Imagine you want to profit from a stock's choppiness
 
 ## System Architecture
 
-The application is built using Python's `asyncio` for high-performance, concurrent operations. Components are decoupled and communicate via queues, creating a resilient and scalable architecture. The system is designed to perform its core task—calculating delta—only when necessary, ensuring efficient operation even with high-frequency market data.
+The application is built using Python's `asyncio` framework. Components are decoupled and communicate via queues, which can create a scalable architecture. The system is designed to calculate delta only when necessary, helping optimize performance during high-volume data periods.
 
 ```mermaid
 flowchart TD
@@ -62,7 +62,7 @@ flowchart TD
     *   It takes market prices as input and first performs a self-consistency check to **back-solve for implied volatility**. It then uses this fresh, real-world volatility to compute the Greeks (Delta, Theta, and Gamma).
     *   ⚠️ Note: The current implementation uses a continuous approximation for the dividend yield. While this is convenient for modeling, it can produce inaccurate risk metrics if a dividend is expected soon. For greater accuracy—especially near dividend dates—a discrete yield model should be used.
 *   **The Decision Maker (`strategy/hedging_strategy.py`):** This component has one job: ingest the calculated delta from a queue and decide if a hedge is necessary. It compares the portfolio's net delta to a configurable "dead band" (`HEDGING_DELTA_THRESHOLD`). If the delta has strayed too far from neutral, it emits a trade command to rebalance.
-*   **The Executor (`portfolio/position_manager.py`):** This is the execution layer. It takes trade commands and handles all interaction with the Alpaca API. It contains important logic to manage order submission robustly, ensuring that new orders don't conflict with existing ones (using locks) and correctly handling trades that cross from a long to a short position.
+*   **The Executor (`portfolio/position_manager.py`):** This is the execution layer. It takes trade commands and handles all interaction with the Alpaca API. It contains important logic to manage how orders are submitted, to avoid placing new orders that conflict with existing ones (using locks) and correctly handling trades that cross from a long to a short position.
 
 ---
 
@@ -149,7 +149,7 @@ The goal is to find the "Goldilocks" zone: a threshold tight enough to capture r
 
 ---
 
-## The Initialization Process: Finding the Best Straddle
+## The Initialization Process: Finding the Straddle for You
 
 When you start the bot in `init` mode, it goes on a hunt for the most "gamma-cheap" straddle. The goal is to find the position that gives you the most profit potential (Gamma) for the lowest cost (Theta + Spread).
 
@@ -157,7 +157,7 @@ It does this by calculating a score for every eligible straddle within your defi
 
 `Score = (abs(Theta) * THETA_WEIGHT + Transaction Cost) / Gamma`
 
-Theta and Gamma are computed from market prices and the transaction cost is approximated as the sum of the spreads of our two options contracts (essentially the cost of entering and exiting the position with no price change).  The bot calculates this score for all candidates and chooses the one with the **lowest score**. This systematic approach ensures you start with the most cost-effective position possible.
+Theta and Gamma are computed from market prices and the transaction cost is approximated as the sum of the spreads of our two options contracts (essentially the cost of entering and exiting the position with no price change).  The bot calculates this score for all candidates and chooses the one with the **lowest score**. This systematic approach is designed to help identify cost-effective positions.
 
 ---
 
@@ -191,7 +191,9 @@ This project is a powerful engine, but it's not a complete, "fire and forget" sy
 <div style="font-size: 0.8em;">
 Disclosures
 
-Options trading is not suitable for all investors due to its inherent high risk, which can potentially result in significant losses. Please read [Characteristics and Risks of Standardized Options](https://www.theocc.com/company-information/documents-and-archives/options-disclosure-document) before investing in options
+Options trading is not suitable for all investors due to its inherent high risk, which can potentially result in significant losses. Please read [Characteristics and Risks of Standardized Options](https://www.theocc.com/company-information/documents-and-archives/options-disclosure-document) before investing in options.
+
+The algorithm’s calculations are based on historical and real-time market data but may not account for all market factors, including sudden price moves, liquidity constraints, or execution delays. Model assumptions, such as volatility estimates and dividend treatments, can impact performance and accuracy. Trades generated by the algorithm are subject to brokerage execution processes, market liquidity, order priority, and timing delays. These factors may cause deviations from expected trade execution prices or times. Users are responsible for monitoring algorithmic activity and understanding the risks involved. Alpaca is not liable for any losses incurred through the use of this system.
 
 The Paper Trading API is offered by AlpacaDB, Inc. and does not require real money or permit a user to transact in real securities in the market. Providing use of the Paper Trading API is not an offer or solicitation to buy or sell securities, securities derivative or futures products of any kind, or any type of trading or investment advice, recommendation or strategy, given or in any manner endorsed by AlpacaDB, Inc. or any AlpacaDB, Inc. affiliate and the information made available through the Paper Trading API is not an offer or solicitation of any kind in any jurisdiction where AlpacaDB, Inc. or any AlpacaDB, Inc. affiliate (collectively, “Alpaca”) is not authorized to do business.
 
