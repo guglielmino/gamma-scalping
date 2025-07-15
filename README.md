@@ -86,7 +86,7 @@ flowchart TD
 
     ```bash
     git clone https://github.com/alpacahq/gamma-scalping.git
-    cd gamma-scalper
+    cd gamma-scalping
 
     # Create and activate a virtual environment with uv
     uv venv
