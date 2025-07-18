@@ -1,6 +1,6 @@
 # Gamma Scalper: An Automated Market-Neutral Options Strategy
 
-This project provides a reference implementation of an automated Gamma Scalping strategy using the Alpaca Trading API. It's designed to be a flexible and technically sound example for traders and developers interested in exploring market-neutral options strategies.
+This project provides a reference implementation of an automated [Gamma Scalping strategy](https://alpaca.markets/learn/gamma-scalping) using the Alpaca Trading API. It's designed to be a flexible and technically sound example for traders and developers interested in exploring market-neutral options strategies.
 
 Our goal is to make complex concepts accessible. If you're new to options, this guide will walk you through the core ideas. If you're an experienced trader, you'll find a configurable engine to build upon.
 
