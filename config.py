@@ -32,7 +32,7 @@ INITIALIZATION_MODE = "resume"
 # if the absolute value of the net delta exceeds this threshold. A larger value
 # means fewer, larger trades, while a smaller value results in more frequent,
 # smaller adjustments. Finding the right balance is key to profitability.
-HEDGING_DELTA_THRESHOLD = 2.0  # e.g., re-hedge when delta moves by +/- 2 shares
+HEDGING_DELTA_THRESHOLD = 1.7  # e.g., re-hedge when delta moves by +/- 2 shares
 # The number of straddles (1 call + 1 put) to purchase. This is the primary
 # lever for scaling the overall size of the strategy. All subsequent hedge
 # trades will be scaled based on this multiplier.
